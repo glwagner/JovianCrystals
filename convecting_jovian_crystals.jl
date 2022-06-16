@@ -7,17 +7,27 @@ include("GammaParaboloids.jl")
 
 using .GammaParaboloids: GammaParaboloid
 
-grid = RectilinearGrid(size=(128, 128), x=(-π, π), y=(-π, π), topology=(Bounded, Bounded, Flat))
+grid = RectilinearGrid(size = (128, 128, 32),
+                       x = (-π, π),
+                       y = (-π, π),
+                       z = (0, 1),
+                       topology = (Bounded, Bounded, Bounded))
 
 # Uncomment to mask out domain corners
 #@inline circle(x, y, z) = sqrt(x^2 + y^2) > π
 #grid = ImmersedBoundaryGrid(grid, GridFittedBoundary(circle))
 
+b_top_bc = FluxBoundaryCondition(1)
+b_bottom_bc = FluxBoundaryCondition(1)
+b_bcs = FieldBoundaryConditions(top=b_top_bc, bottom=b_bottom_bc)
+
 model = NonhydrostaticModel(; grid,
                             timestepper = :RungeKutta3,
+                            tracers = :b,
+                            buoyancy = BuoyancyTracer(),
                             advection = WENO5(),
-                            coriolis = GammaParaboloid(f₀=10, γ=2))
-
+                            #coriolis = BetaPlane(f₀=1, β=0.1))
+                            coriolis = GammaParaboloid(f₀=1, γ=0.8))
 
 u, v, w = model.velocities
 

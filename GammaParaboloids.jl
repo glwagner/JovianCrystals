@@ -29,7 +29,7 @@ GammaParaboloid(FT::DataType=Float64; f₀, γ, scheme::S=EnergyConservingScheme
     y = ynode(Face(), Face(), Center(), i, j, k, grid)
     f₀ = coriolis.f₀
     γ = coriolis.γ
-    f = f₀ - γ * (x^2 + y^2)
+    f = f₀ - γ / 2 * (x^2 + y^2)
     return f
 end
 
