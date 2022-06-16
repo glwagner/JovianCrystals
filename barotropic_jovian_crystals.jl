@@ -3,9 +3,9 @@ using Oceananigans.ImmersedBoundaries: GridFittedBoundary
 using GLMakie
 using Statistics
 
-include("GammaParaboloids.jl")
+include("PolarPlaneCoriolis.jl")
 
-using .GammaParaboloids: GammaParaboloid
+using .PolarPlaneCoriolis: PolarPlane
 
 grid = RectilinearGrid(size=(128, 128), x=(-π, π), y=(-π, π), topology=(Bounded, Bounded, Flat))
 
@@ -16,7 +16,7 @@ grid = RectilinearGrid(size=(128, 128), x=(-π, π), y=(-π, π), topology=(Boun
 model = NonhydrostaticModel(; grid,
                             timestepper = :RungeKutta3,
                             advection = WENO5(),
-                            coriolis = GammaParaboloid(f₀=10, γ=2))
+                            coriolis = PolarPlane(f₀=10, γ=2))
 
 
 u, v, w = model.velocities
