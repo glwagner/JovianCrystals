@@ -7,18 +7,31 @@ include("PolarPlaneCoriolis.jl")
 
 using .PolarPlaneCoriolis: PolarPlane
 
-grid = RectilinearGrid(size = (128, 128, 32),
-                       x = (-π, π),
-                       y = (-π, π),
-                       z = (0, 1),
+Nh = 128
+architecture = CPU()
+f₀ = 3.52e-4
+γ = 7.87e-20
+U = 80
+Lᵧ = (U / γ)^(1/3)
+L = 6Lᵧ
+H = Lᵧ / 5
+Qᵇ = 1
+
+@show τᵧ = Lᵧ / U
+
+grid = RectilinearGrid(architecture;
+                       size = (Nh, Nh, 64),
+                       x = (-L, L),
+                       y = (-L, L),
+                       z = (0, H),
                        topology = (Bounded, Bounded, Bounded))
 
 # Uncomment to mask out domain corners
-#@inline circle(x, y, z) = sqrt(x^2 + y^2) > π
+#@inline circle(x, y, z) = sqrt(x^2 + y^2) > L
 #grid = ImmersedBoundaryGrid(grid, GridFittedBoundary(circle))
 
-b_top_bc = FluxBoundaryCondition(1)
-b_bottom_bc = FluxBoundaryCondition(1)
+b_top_bc = FluxBoundaryCondition(Qᵇ)
+b_bottom_bc = FluxBoundaryCondition(Qᵇ)
 b_bcs = FieldBoundaryConditions(top=b_top_bc, bottom=b_bottom_bc)
 
 model = NonhydrostaticModel(; grid,
@@ -26,13 +39,14 @@ model = NonhydrostaticModel(; grid,
                             tracers = :b,
                             buoyancy = BuoyancyTracer(),
                             advection = WENO5(),
-                            coriolis = PolarPlane(f₀=1, γ=0.8))
+                            coriolis = PolarPlane(; f₀, γ))
 
 u, v, w = model.velocities
 
+λ = L / 4
 ϵ(x, y, z) = 2 * (rand() - 1)
-ρ(x, y, z) = exp(-(x^2 + y^2))
-uᵢ(x, y, z) = ϵ(x, y, z) * ρ(x, y, z)
+ρ(x, y, z) = exp(-(x^2 + y^2) / 2λ^2)
+uᵢ(x, y, z) = U * ϵ(x, y, z) * ρ(x, y, z)
 
 set!(model, u=uᵢ, v=uᵢ)
 
@@ -40,7 +54,8 @@ u, v, w = model.velocities
 u .-= mean(u)
 v .-= mean(v)
 
-simulation = Simulation(model, Δt=0.01, stop_time=10)
+Δt = 0.1 * grid.Δxᶜᵃᵃ / U
+simulation = Simulation(model; Δt, stop_time=10τᵧ)
 
 wall_time = Ref(time_ns())
 
