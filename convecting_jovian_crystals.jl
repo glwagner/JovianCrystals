@@ -1,4 +1,5 @@
 using Oceananigans
+using Oceananigans.Units
 using Oceananigans.ImmersedBoundaries: GridFittedBoundary
 using GLMakie
 using Statistics
@@ -7,28 +8,32 @@ include("PolarPlaneCoriolis.jl")
 
 using .PolarPlaneCoriolis: PolarPlane
 
-Nh = 128
-architecture = CPU()
+Nh = 384
+Nz = 128
+architecture = GPU()
 f₀ = 3.52e-4
 γ = 7.87e-20
 U = 80
 Lᵧ = (U / γ)^(1/3)
 L = 6Lᵧ
 H = Lᵧ / 5
-Qᵇ = 1
 
 @show τᵧ = Lᵧ / U
 
+# τᵇ = (H^2 / Qᵇ)^(1/3)
+# -> Q = H^2 / τᵧ^3
+Qᵇ = 1e6 * H^2 / τᵧ^3
+
 grid = RectilinearGrid(architecture;
-                       size = (Nh, Nh, 64),
+                       size = (Nh, Nh, Nz),
                        x = (-L, L),
                        y = (-L, L),
                        z = (0, H),
                        topology = (Bounded, Bounded, Bounded))
 
 # Uncomment to mask out domain corners
-#@inline circle(x, y, z) = sqrt(x^2 + y^2) > L
-#grid = ImmersedBoundaryGrid(grid, GridFittedBoundary(circle))
+@inline circle(x, y, z) = sqrt(x^2 + y^2) > 0.98L
+grid = ImmersedBoundaryGrid(grid, GridFittedBoundary(circle))
 
 b_top_bc = FluxBoundaryCondition(Qᵇ)
 b_bottom_bc = FluxBoundaryCondition(Qᵇ)
@@ -55,7 +60,7 @@ u .-= mean(u)
 v .-= mean(v)
 
 Δt = 0.1 * grid.Δxᶜᵃᵃ / U
-simulation = Simulation(model; Δt, stop_time=10τᵧ)
+simulation = Simulation(model; Δt, stop_time=60days)
 
 wall_time = Ref(time_ns())
 
@@ -63,7 +68,8 @@ function progress(sim)
     elapsed = 1e-9 * (time_ns() - wall_time[])
 
     msg = string("Iteration: ", iteration(sim),
-                 ", time: ", time(sim),
+                 ", time: ", prettytime(sim),
+                 ", Δt: ", prettytime(sim.Δt),
                  ", wall time: ", prettytime(elapsed))
     @info msg
 
@@ -78,24 +84,38 @@ wizard = TimeStepWizard(cfl=0.5)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 u, v, w = model.velocities
+b = model.tracers.b
 
 ω = ∂x(v) - ∂y(u)
-s = sqrt(u^2 + v^2)
 
 # We pass these operations to an output writer below to calculate and output them during the simulation.
-filename = "convecting_jovian_crystals.jld2"
+filename = "convecting_jovian_crystals"
 
 k = round(Int, grid.Nz/2)
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; ω, s, w),
+
+simulation.output_writers[:mid] = JLD2OutputWriter(model, (; ω, u, v, w, b),
                                                       schedule = IterationInterval(10),
-                                                      filename = filename,
+                                                      filename = filename * "_mid.jld2",
                                                       indices = (:, :, k),
+                                                      overwrite_existing = true)
+
+simulation.output_writers[:bottom] = JLD2OutputWriter(model, (; ω, u, v, w, b),
+                                                      schedule = IterationInterval(10),
+                                                      filename = filename * "_bottom.jld2",
+                                                      indices = (:, :, 8),
+                                                      overwrite_existing = true)
+
+l = round(Int, grid.Ny/2)
+simulation.output_writers[:slice] = JLD2OutputWriter(model, (; ω, u, v, w, b),
+                                                      schedule = IterationInterval(10),
+                                                      filename = filename * "_slice.jld2",
+                                                      indices = (:, l, :),
                                                       overwrite_existing = true)
 
 run!(simulation)
 
+#=
 ωt = FieldTimeSeries(filename, "ω")
-st = FieldTimeSeries(filename, "s")
 wt = FieldTimeSeries(filename, "w")
 
 t = ωt.times
@@ -112,3 +132,4 @@ heatmap!(ax1, ωⁿ)
 heatmap!(ax2, wⁿ)
 
 display(fig)
+=#
